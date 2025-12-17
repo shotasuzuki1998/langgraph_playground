@@ -1,8 +1,8 @@
 {
     "name": "langgraph-playground",
-    "build": { 
-    "dockerfile": "Dockerfile"
-    },
+    "dockerComposeFile": "./docker-compose.yml",
+    "service": "workspace",
+    "runServices": ["workspace", "db"],
     "containerUser": "root",
     "features": {
       "ghcr.io/devcontainers-extra/features/poetry:2": {},
@@ -12,7 +12,6 @@
       },
       "ghcr.io/devcontainers/features/docker-in-docker:2": {}
     },
-    "workspaceMount": "source=${localWorkspaceFolder},target=/app,type=bind",
     "workspaceFolder": "/app",
     "postCreateCommand": "/bin/bash ./.devcontainer/postCreateCommand.sh",
     "customizations": {

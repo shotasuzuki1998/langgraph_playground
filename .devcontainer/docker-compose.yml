@@ -1,0 +1,22 @@
+services:
+
+  workspace:
+    build:
+      dockerfile: Dockerfile
+    volumes:
+      - type: bind
+        source: ../
+        target: /app
+    tty: true
+    privileged: true
+    init: true
+  db:
+    image: mysql:8.4
+    ports:
+      - 63306:3306
+    env_file:
+      - ../.env
+    volumes:
+      - ./.docker/db/data:/var/lib/mysql
+      - ./.docker/db/init:/docker-entrypoint-initdb.d
+    command: ['mysqld', '--character-set-server=utf8mb4', '--collation-server=utf8mb4_general_ci','--default-time-zone=+09:00', '--local-infile=1']
