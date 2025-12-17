@@ -1,0 +1,62 @@
+{
+    "name": "langgraph-playground",
+    "build": { 
+    "dockerfile": "Dockerfile"
+    },
+    "containerUser": "root",
+    "features": {
+      "ghcr.io/devcontainers-extra/features/poetry:2": {},
+      // Python
+      "ghcr.io/devcontainers/features/python:1": {
+        "version": "3.13"
+      },
+      "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+    },
+    "workspaceMount": "source=${localWorkspaceFolder},target=/app,type=bind",
+    "workspaceFolder": "/app",
+    "postCreateCommand": "/bin/bash ./.devcontainer/postCreateCommand.sh",
+    "customizations": {
+      "vscode": {
+        "extensions": [
+          // python
+          "ms-python.black-formatter",
+          "ms-python.flake8",
+          "ms-python.isort",
+          "njpwerner.autodocstring",
+          "tamasfe.even-better-toml",
+          // common
+          "oderwat.indent-rainbow",
+          "streetsidesoftware.code-spell-checker",
+          "mosapride.zenkaku",
+          "github.vscode-github-actions",
+          "yzhang.markdown-all-in-one",
+          "bierner.markdown-mermaid",
+          "GitHub.vscode-pull-request-github"
+        ],
+        "settings": {
+          // デフォルトタブサイズは2なので言語ごとに変更したい場合は、言語ごとに設定を上書きしてください
+          "editor.tabSize": 2,
+          "editor.insertSpaces": true,
+          "[python]": {
+            "editor.defaultFormatter": "ms-python.black-formatter",
+            "editor.formatOnSave": true,
+            "editor.codeActionsOnSave": {
+              "source.organizeImports": "explicit"
+            }
+          },
+          "black-formatter.path": ["black"],
+          "black-formatter.args": [
+            "--config=${workspaceFolder}/pyproject.toml"
+          ],
+          "flake8.args": [
+            "--toml-config=${workspaceFolder}/pyproject.toml"
+          ],
+          "flake8.path": ["flake8p"],
+          "isort.args": [
+            "--settings",
+            "${workspaceFolder}/pyproject.toml"
+          ]
+        }
+      }
+    }
+  }
