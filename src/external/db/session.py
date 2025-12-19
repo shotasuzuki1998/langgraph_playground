@@ -85,9 +85,7 @@ def format_result(result: dict) -> str:
     header = " | ".join(str(col).ljust(widths[col]) for col in columns)
     separator = "-+-".join("-" * widths[col] for col in columns)
     rows_str = "\n".join(
-        " | ".join(str(row.get(col, ""))[:40].ljust(widths[col]) for col in columns)
-        for row in data
+        " | ".join(str(row.get(col, ""))[:40].ljust(widths[col]) for col in columns) for row in data
     )
 
     return f"結果: {result['row_count']}件\n\n{header}\n{separator}\n{rows_str}"
-

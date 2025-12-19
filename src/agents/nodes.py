@@ -56,7 +56,7 @@ def generate_sql_node(state: AgentState) -> AgentState:
             retry_context = f"""
 【前回のエラー - SQL実行エラー】
 生成したSQL: {state.get('sql_query', '')}
-エラー: {state['error']}
+エラー: {state.get('error', '')}
 
 構文エラーを修正してください。
 """
