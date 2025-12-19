@@ -22,7 +22,7 @@ def get_db_engine():
     return create_engine(connection_string, pool_pre_ping=True)
 
 
-def execute_sql(query: str, max_rows: int = 50) -> dict:
+def execute_sql(query: str, max_rows: int = settings.default_limit) -> dict:
     """
     SQLを実行して結果を返す
 
@@ -38,6 +38,8 @@ def execute_sql(query: str, max_rows: int = 50) -> dict:
             - row_count: 取得行数
             - error: エラーメッセージ（失敗時）
     """
+    max_rows = min(max_rows, settings.max_limit)
+
     try:
         engine = get_db_engine()
         with engine.connect() as conn:
