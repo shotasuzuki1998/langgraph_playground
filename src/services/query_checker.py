@@ -65,6 +65,7 @@ JOIN_RE = re.compile(
 )
 
 
+# 以下ヘルパー関数たち。
 def _normalize_identifier(name: str) -> str:
     """テーブル名を正規化（引用符除去、小文字化）"""
     return re.sub(r'^[`"\[]|[`"\]]$', "", name).lower()
@@ -81,17 +82,13 @@ def _extract_tables(query: str) -> tuple[set[str], dict[str, str]]:
         tuple: (テーブル名のセット, {エイリアス: テーブル名} の辞書)
     """
     tables = set()
-    alias_map = {}
 
     for pattern in [FROM_RE, JOIN_RE]:
         for match in pattern.finditer(query):
             table = _normalize_identifier(match.group(1))
-            alias = (match.group(2) or "").lower()
             tables.add(table)
-            if alias:
-                alias_map[alias] = table
 
-    return tables, alias_map
+    return tables
 
 
 def _extract_limit(query: str) -> int | None:
@@ -102,6 +99,7 @@ def _extract_limit(query: str) -> int | None:
     return None
 
 
+# 実際にクエリチェックの判定をオブジェクトとして持つクラス。
 class QueryCheckResult:
     """クエリチェックの結果"""
 
@@ -116,9 +114,9 @@ class QueryCheckResult:
         return f"QueryCheckResult(valid=False, error='{self.error}')"
 
 
+# 実際にクエリチェックを処理する関数
 def check_query(
     query: str,
-    service_id: int | None = None,
     allow_subqueries: bool = False,
     max_limit: int | None = None,
 ) -> QueryCheckResult:
@@ -186,7 +184,7 @@ def check_query(
         )
 
     # 8. テーブル名の抽出と検証
-    tables, alias_map = _extract_tables(query)
+    tables = _extract_tables(query)
 
     if not tables:
         return QueryCheckResult(False, error="テーブル名を特定できませんでした")

@@ -207,11 +207,7 @@ def handle_error_node(state: AgentState) -> AgentState:
     return {**state, "answer": error_msg}
 
 
-# =============================================================================
-# 条件分岐関数
-# =============================================================================
-
-
+# 以下条件分岐関数
 def check_query_result(state: AgentState) -> str:
     """
     クエリチェック結果を判定
