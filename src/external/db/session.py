@@ -68,9 +68,6 @@ def format_result(result: dict) -> str:
     Returns:
         str: フォーマットされた結果文字列
     """
-    if not result["success"]:
-        return f"エラー: {result['error']}"
-
     if not result["data"]:
         return "結果: 0件"
 
