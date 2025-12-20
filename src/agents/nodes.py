@@ -3,6 +3,8 @@ LangGraphノード定義
 各処理ステップを関数として定義
 """
 
+import json
+
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
@@ -134,11 +136,10 @@ def execute_sql_node(state: AgentState) -> AgentState:
     Returns:
         AgentState: 更新された状態（sql_resultまたはerrorが設定される）
     """
-    # チェック済みクエリを使用
     result = execute_sql(state["checked_query"])
 
     if result["success"]:
-        formatted = format_result(result)
+        formatted = f"結果: {result['row_count']}件\n{json.dumps(result['data'], ensure_ascii=False, default=str)}"
         return {**state, "sql_result": formatted, "error": None, "error_type": None}
     else:
         return {
