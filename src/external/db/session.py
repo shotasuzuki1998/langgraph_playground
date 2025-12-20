@@ -28,9 +28,8 @@ def execute_sql(query: str, max_rows: int = settings.default_limit) -> dict:
     try:
         engine = get_db_engine()
         with engine.connect() as conn:
-            result = conn.execute(text(query))
-            rows = result.mappings().fetchmany(max_rows)
-            data = [dict(row) for row in rows]
+            results = conn.execute(text(query)).mappings().fetchmany(max_rows)
+            data = [dict(result) for result in results]
 
             return {
                 "success": True,

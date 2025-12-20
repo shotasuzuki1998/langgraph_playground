@@ -9,7 +9,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from src.agents.state import AgentState
-from src.external.db.session import execute_sql, format_result
+from src.external.db.session import execute_sql
 from src.schemas.database_schema import SCHEMA_INFO
 from src.services.query_checker import check_query
 from src.settings import settings

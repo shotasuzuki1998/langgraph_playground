@@ -7,10 +7,6 @@ import re
 
 from src.settings import settings
 
-# =============================================================================
-# ポリシー設定
-# =============================================================================
-
 # アクセス許可テーブル
 ALLOWED_TABLES = {
     # マスターデータ
@@ -27,15 +23,6 @@ ALLOWED_TABLES = {
     "display_ad_daily_stats",
     "campaign_daily_stats",
 }
-
-# サービススコープが必要なテーブル（service_id でフィルタ必須）
-# 特定のサービスのデータのみ見せたい場合に使用
-SERVICE_SCOPED_TABLES: set[str] = set()  # 例: {"campaigns", "campaign_daily_stats"}
-
-
-# =============================================================================
-# 正規表現パターン
-# =============================================================================
 
 # 禁止キーワード（DML/DDL）
 DENY_RE = re.compile(
@@ -77,25 +64,6 @@ JOIN_RE = re.compile(
     re.I,
 )
 
-# service_idフィルタの検出
-SERVICE_ID_PLACEHOLDER_RE = re.compile(
-    r"\b(?:\w+\.)?service_id\s*=\s*:service_id\b",
-    re.I,
-)
-SERVICE_ID_NUMERIC_RE = re.compile(
-    r"\b(?:\w+\.)?service_id\s*=\s*\d+\b",
-    re.I,
-)
-SERVICE_ID_IN_RE = re.compile(
-    r"\b(?:\w+\.)?service_id\s+IN\s*\(",
-    re.I,
-)
-
-
-# =============================================================================
-# ヘルパー関数
-# =============================================================================
-
 
 def _normalize_identifier(name: str) -> str:
     """テーブル名を正規化（引用符除去、小文字化）"""
@@ -132,11 +100,6 @@ def _extract_limit(query: str) -> int | None:
     if match:
         return int(match.group(1))
     return None
-
-
-# =============================================================================
-# メインのチェック関数
-# =============================================================================
 
 
 class QueryCheckResult:
@@ -236,26 +199,7 @@ def check_query(
             error=f"アクセスが許可されていないテーブル: {', '.join(sorted(disallowed))}",
         )
 
-    # 9. サービススコープのチェック（設定されている場合）
-    if SERVICE_SCOPED_TABLES and service_id is not None:
-        scoped_tables = tables & SERVICE_SCOPED_TABLES
-        if scoped_tables:
-            # 数値リテラルでのservice_id指定は禁止
-            if SERVICE_ID_NUMERIC_RE.search(query) or SERVICE_ID_IN_RE.search(query):
-                return QueryCheckResult(
-                    False,
-                    error="service_idには:service_idプレースホルダを使用してください",
-                )
-
-            # service_id = :service_id が必須
-            if not SERVICE_ID_PLACEHOLDER_RE.search(query):
-                return QueryCheckResult(
-                    False,
-                    error=f"テーブル {', '.join(scoped_tables)} へのアクセスには "
-                    f"service_id = :service_id の条件が必要です",
-                )
-
-    # 10. LIMIT句の処理
+    # 9. LIMIT句の処理
     current_limit = _extract_limit(query)
 
     if current_limit is None:
@@ -266,43 +210,3 @@ def check_query(
         query = HAS_LIMIT_RE.sub(f"LIMIT {max_limit}", query)
 
     return QueryCheckResult(True, query=query)
-
-
-# =============================================================================
-# 便利な関数
-# =============================================================================
-
-
-def safe_query(query: str, **kwargs) -> str:
-    """
-    クエリをチェックして、安全なクエリを返す
-    エラーの場合は例外を発生
-
-    Args:
-        query: チェックするSQLクエリ
-        **kwargs: check_query に渡す追加引数
-
-    Returns:
-        str: 安全なクエリ
-
-    Raises:
-        ValueError: クエリが安全でない場合
-    """
-    result = check_query(query, **kwargs)
-    if not result.is_valid:
-        raise ValueError(result.error)
-    return result.query
-
-
-def is_safe_query(query: str, **kwargs) -> bool:
-    """
-    クエリが安全かどうかを判定
-
-    Args:
-        query: チェックするSQLクエリ
-        **kwargs: check_query に渡す追加引数
-
-    Returns:
-        bool: 安全な場合True
-    """
-    return check_query(query, **kwargs).is_valid
