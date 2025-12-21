@@ -72,15 +72,6 @@ def _normalize_identifier(name: str) -> str:
 
 
 def _extract_tables(query: str) -> tuple[set[str], dict[str, str]]:
-    """
-    クエリからテーブル名とエイリアスを抽出
-
-    Args:
-        query: SQLクエリ
-
-    Returns:
-        tuple: (テーブル名のセット, {エイリアス: テーブル名} の辞書)
-    """
     tables = set()
 
     for pattern in [FROM_RE, JOIN_RE]:
@@ -115,11 +106,7 @@ class QueryCheckResult:
 
 
 # 実際にクエリチェックを処理する関数
-def check_query(
-    query: str,
-    allow_subqueries: bool = False,
-    max_limit: int | None = None,
-) -> QueryCheckResult:
+def check_query(query: str, allow_subqueries: bool = False) -> QueryCheckResult:
     """
     SQLクエリの安全性とポリシー準拠をチェック
 
@@ -203,8 +190,8 @@ def check_query(
     if current_limit is None:
         # LIMITがない場合はデフォルトを追加
         query = f"{query} LIMIT {settings.default_limit}"
-    elif current_limit > max_limit:
+    elif current_limit > settings.max_limit:
         # 最大値を超えている場合は制限
-        query = HAS_LIMIT_RE.sub(f"LIMIT {max_limit}", query)
+        query = HAS_LIMIT_RE.sub(f"LIMIT {settings.max_limit}", query)
 
     return QueryCheckResult(True, query=query)
