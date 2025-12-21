@@ -56,11 +56,11 @@ SUBQUERY_RE = re.compile(
 
 # FROM/JOIN句からテーブル名を抽出
 FROM_RE = re.compile(
-    r"\bFROM\s+([`\"\[]?\w+[`\"\]]?)(?:\s+(?:AS\s+)?(\w+))?",
+    r"\bFROM\s+([`\"\[]?\w+[`\"\]]?)",
     re.I,
 )
 JOIN_RE = re.compile(
-    r"\bJOIN\s+([`\"\[]?\w+[`\"\]]?)(?:\s+(?:AS\s+)?(\w+))?",
+    r"\bJOIN\s+([`\"\[]?\w+[`\"\]]?)",
     re.I,
 )
 
@@ -119,9 +119,6 @@ def check_query(query: str, allow_subqueries: bool = False) -> QueryCheckResult:
     Returns:
         QueryCheckResult: チェック結果
     """
-    if max_limit is None:
-        max_limit = settings.max_limit
-
     # 1. 基本的な正規化
     query = query.strip()
 
