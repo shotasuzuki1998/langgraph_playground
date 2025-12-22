@@ -42,11 +42,8 @@ HAS_LIMIT_RE = re.compile(
     re.I,
 )
 
-# サブクエリの検出（SELECT内SELECT）- JOINのサブクエリは許可しない
-SUBQUERY_RE = re.compile(
-    r"\(\s*SELECT\b",
-    re.I,
-)
+# WITH AS句の検出
+WITH_AS_RE = re.compile(r"^WITH\b", re.I)
 
 # FROM/JOIN句からテーブル名を抽出
 FROM_RE = re.compile(
@@ -58,9 +55,6 @@ JOIN_RE = re.compile(
     re.I,
 )
 
-# WITH AS句からテーブル名を抽出
-CTE_NAME_RE = re.compile(r"\bWITH\s+(\w+)\s+AS\b", re.I)
-
 
 # 以下ヘルパー関数たち。
 def _normalize_identifier(name: str) -> str:
@@ -69,8 +63,6 @@ def _normalize_identifier(name: str) -> str:
 
 
 def _extract_tables(query: str) -> set[str]:
-    cte_names = {name.lower() for name in CTE_NAME_RE.findall(query)}
-
     tables = set()
 
     for pattern in [FROM_RE, JOIN_RE]:
@@ -78,7 +70,7 @@ def _extract_tables(query: str) -> set[str]:
             table = _normalize_identifier(match.group(1))
             tables.add(table)
 
-    return tables - cte_names
+    return tables
 
 
 def _extract_limit(query: str) -> int | None:
@@ -105,7 +97,7 @@ class QueryCheckResult:
 
 
 # 実際にクエリチェックを処理する関数
-def check_query(query: str, allow_subqueries: bool = False) -> QueryCheckResult:
+def check_query(query: str) -> QueryCheckResult:
     """
     SQLクエリの安全性とポリシー準拠をチェック
 
@@ -151,10 +143,10 @@ def check_query(query: str, allow_subqueries: bool = False) -> QueryCheckResult:
             error="SQLコメントや複数文の実行は許可されていません",
         )
 
-    if not allow_subqueries and SUBQUERY_RE.search(query):
+    if WITH_AS_RE.search(query):
         return QueryCheckResult(
             False,
-            error="サブクエリは許可されていません",
+            error="WITH句の使用は許可されていません。別の書き方で実行して下さい。",
         )
 
     # 7. テーブル名の抽出と検証
