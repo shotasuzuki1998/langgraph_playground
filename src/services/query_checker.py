@@ -42,12 +42,6 @@ HAS_LIMIT_RE = re.compile(
     re.I,
 )
 
-# 非プレーンSQLの検出（CTE、サブクエリ、UNION等）
-NON_PLAIN_SQL_RE = re.compile(
-    r"\b(WITH\s+\w+\s+AS|UNION|INTERSECT|EXCEPT)\b",
-    re.I,
-)
-
 # サブクエリの検出（SELECT内SELECT）- JOINのサブクエリは許可しない
 SUBQUERY_RE = re.compile(
     r"\(\s*SELECT\b",
@@ -64,6 +58,9 @@ JOIN_RE = re.compile(
     re.I,
 )
 
+# WITH AS句からテーブル名を抽出
+CTE_NAME_RE = re.compile(r"\bWITH\s+(\w+)\s+AS\b", re.I)
+
 
 # 以下ヘルパー関数たち。
 def _normalize_identifier(name: str) -> str:
@@ -71,7 +68,9 @@ def _normalize_identifier(name: str) -> str:
     return re.sub(r'^[`"\[]|[`"\]]$', "", name).lower()
 
 
-def _extract_tables(query: str) -> tuple[set[str], dict[str, str]]:
+def _extract_tables(query: str) -> set[str]:
+    cte_names = {name.lower() for name in CTE_NAME_RE.findall(query)}
+
     tables = set()
 
     for pattern in [FROM_RE, JOIN_RE]:
@@ -79,7 +78,7 @@ def _extract_tables(query: str) -> tuple[set[str], dict[str, str]]:
             table = _normalize_identifier(match.group(1))
             tables.add(table)
 
-    return tables
+    return tables - cte_names
 
 
 def _extract_limit(query: str) -> int | None:
@@ -112,9 +111,7 @@ def check_query(query: str, allow_subqueries: bool = False) -> QueryCheckResult:
 
     Args:
         query: チェックするSQLクエリ
-        service_id: サービスIDでフィルタを強制する場合に指定
         allow_subqueries: サブクエリを許可するか
-        max_limit: 許可する最大LIMIT値（Noneの場合はsettingsから取得）
 
     Returns:
         QueryCheckResult: チェック結果
@@ -137,7 +134,7 @@ def check_query(query: str, allow_subqueries: bool = False) -> QueryCheckResult:
     query = query.rstrip(";").strip()
 
     # 4. SELECTのみ許可
-    if not query.upper().startswith("SELECT"):
+    if not (query.upper().startswith("SELECT") or query.upper().startswith("WITH")):
         return QueryCheckResult(False, error="SELECT文のみ実行可能です")
 
     # 5. DML/DDLの検出
@@ -154,20 +151,13 @@ def check_query(query: str, allow_subqueries: bool = False) -> QueryCheckResult:
             error="SQLコメントや複数文の実行は許可されていません",
         )
 
-    # 7. サブクエリ/CTE/UNION等の検出
-    if NON_PLAIN_SQL_RE.search(query):
-        return QueryCheckResult(
-            False,
-            error="WITH句(CTE)、UNION、INTERSECT、EXCEPTは許可されていません",
-        )
-
     if not allow_subqueries and SUBQUERY_RE.search(query):
         return QueryCheckResult(
             False,
             error="サブクエリは許可されていません",
         )
 
-    # 8. テーブル名の抽出と検証
+    # 7. テーブル名の抽出と検証
     tables = _extract_tables(query)
 
     if not tables:
@@ -181,7 +171,7 @@ def check_query(query: str, allow_subqueries: bool = False) -> QueryCheckResult:
             error=f"アクセスが許可されていないテーブル: {', '.join(sorted(disallowed))}",
         )
 
-    # 9. LIMIT句の処理
+    # 8. LIMIT句の処理
     current_limit = _extract_limit(query)
 
     if current_limit is None:
