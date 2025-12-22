@@ -42,9 +42,6 @@ HAS_LIMIT_RE = re.compile(
     re.I,
 )
 
-# WITH AS句の検出
-WITH_AS_RE = re.compile(r"^WITH\b", re.I)
-
 # FROM/JOIN句からテーブル名を抽出
 FROM_RE = re.compile(
     r"\bFROM\s+([`\"\[]?\w+[`\"\]]?)",
@@ -103,8 +100,6 @@ def check_query(query: str) -> QueryCheckResult:
 
     Args:
         query: チェックするSQLクエリ
-        allow_subqueries: サブクエリを許可するか
-
     Returns:
         QueryCheckResult: チェック結果
     """
@@ -126,7 +121,7 @@ def check_query(query: str) -> QueryCheckResult:
     query = query.rstrip(";").strip()
 
     # 4. SELECTのみ許可
-    if not (query.upper().startswith("SELECT") or query.upper().startswith("WITH")):
+    if not query.upper().startswith("SELECT"):
         return QueryCheckResult(False, error="SELECT文のみ実行可能です")
 
     # 5. DML/DDLの検出
@@ -141,12 +136,6 @@ def check_query(query: str) -> QueryCheckResult:
         return QueryCheckResult(
             False,
             error="SQLコメントや複数文の実行は許可されていません",
-        )
-
-    if WITH_AS_RE.search(query):
-        return QueryCheckResult(
-            False,
-            error="WITH句の使用は許可されていません。別の書き方で実行して下さい。",
         )
 
     # 7. テーブル名の抽出と検証
