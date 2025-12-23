@@ -200,7 +200,7 @@ def handle_error_node(state: AgentState) -> AgentState:
 
 エラー: {state.get('error', '不明')}
 試行したSQL: {state.get('sql_query', 'なし')}
-リトライ回数: {state.get('retry_count', 0)}/{settings.max_retries}
+リトライ回数: {state.get('retry_count')}/{settings.max_retries}
 
 質問を変えて再度お試しください。"""
 
