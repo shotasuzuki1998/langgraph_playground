@@ -11,6 +11,7 @@ from src.agents.nodes import (
     check_query_result,
     check_weather_needed_node,
     execute_sql_node,
+    extract_weather_dates_node,
     fetch_weather_node,
     generate_answer_node,
     generate_answer_with_weather_node,
@@ -41,6 +42,7 @@ def build_graph():
     workflow.add_node("generate_sql", generate_sql_node)
     workflow.add_node("check_query", check_query_node)
     workflow.add_node("execute_sql", execute_sql_node)
+    workflow.add_node("extract_weather_dates", extract_weather_dates_node)
     workflow.add_node("fetch_weather", fetch_weather_node)
     workflow.add_node("generate_answer", generate_answer_node)
     workflow.add_node("generate_answer_with_weather", generate_answer_with_weather_node)
@@ -65,16 +67,20 @@ def build_graph():
     )
 
     # 条件分岐: SQL実行後
+    # まずはdateを取得させに行く
     workflow.add_conditional_edges(
         "execute_sql",
         check_execute_result,
         {
-            "fetch_weather": "fetch_weather",
+            "fetch_weather": "extract_weather_dates",
             "generate_answer": "generate_answer",
             "retry": "generate_sql",
             "error": "handle_error",
         },
     )
+
+    # 取得できたら天気取得しに行く
+    workflow.add_edge("extract_weather_dates", "fetch_weather")
 
     # 天気取得後は天気付き回答へ
     workflow.add_edge("fetch_weather", "generate_answer_with_weather")
@@ -105,6 +111,7 @@ def ask(question: str) -> str:
         "sql_query": "",
         "checked_query": "",
         "sql_result": "",
+        "sql_result_data": [],
         "answer": "",
         "error": None,
         "error_type": None,
@@ -112,6 +119,7 @@ def ask(question: str) -> str:
         # 天気関連の初期値
         "needs_weather": False,
         "weather_locations": [],
+        "weather_dates": [],
         "weather_info": [],
         "weather_api_history": {
             "called": False,
@@ -140,12 +148,14 @@ def ask_with_details(question: str) -> dict:
         "sql_query": "",
         "checked_query": "",
         "sql_result": "",
+        "sql_result_data": [],
         "answer": "",
         "error": None,
         "error_type": None,
         "retry_count": 0,
         "needs_weather": False,
         "weather_locations": [],
+        "weather_dates": [],
         "weather_info": [],
         "weather_api_history": {
             "called": False,
@@ -163,7 +173,6 @@ def ask_with_details(question: str) -> dict:
         "sql_result": result["sql_result"],
         "answer": result["answer"],
         "error": result.get("error"),
-        # 天気関連の詳細
         "weather_info": result.get("weather_info", []),
         "weather_api_history": result.get("weather_api_history", {}),
     }

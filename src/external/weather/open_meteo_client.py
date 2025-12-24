@@ -37,73 +37,88 @@ WEATHER_CODES = {
 }
 
 
-async def get_weather(location: str) -> dict:
+async def get_weather_on_date(location: str, target_date: str) -> dict:
     """
-    指定した場所の現在の天気を取得
-
-    Args:
-        location: 場所（"tokyo" or "osaka"）
-
-    Returns:
-        dict: 天気情報
-            - location: 場所
-            - temperature: 気温
-            - weather_code: 天気コード
-            - weather_description: 天気の説明
-            - success: 成功したかどうか
-            - error: エラーメッセージ（あれば）
+    指定した場所・日付(YYYY-MM-DD)の天気を取得（daily）
     """
     if location not in CITY_COORDINATES:
         return {
             "location": location,
-            "temperature": None,
+            "date": target_date,
             "weather_code": None,
             "weather_description": "",
+            "temp_max": None,
+            "temp_min": None,
             "success": False,
             "error": f"未対応の場所: {location}",
         }
 
     city = CITY_COORDINATES[location]
-    url = "https://api.open-meteo.com/v1/forecast"
+    url = "https://archive-api.open-meteo.com/v1/archive"
     params = {
         "latitude": city["latitude"],
         "longitude": city["longitude"],
-        "current_weather": True,
+        "start_date": target_date,
+        "end_date": target_date,
+        "daily": "weather_code,temperature_2m_max,temperature_2m_min",
         "timezone": "Asia/Tokyo",
     }
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(url, params=params)
-            response.raise_for_status()
-            data = response.json()
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
 
-        current = data.get("current_weather", {})
-        weather_code = current.get("weathercode", 0)
+        daily = data.get("daily") or {}
+        # 1日分の配列が返る想定
+        codes = daily.get("weather_code") or []
+        tmax = daily.get("temperature_2m_max") or []
+        tmin = daily.get("temperature_2m_min") or []
 
+        if not codes:
+            return {
+                "location": city["name"],
+                "date": target_date,
+                "weather_code": None,
+                "weather_description": "",
+                "temp_max": None,
+                "temp_min": None,
+                "success": False,
+                "error": "daily weather_code が取得できませんでした",
+            }
+
+        wc = int(codes[0])
         return {
             "location": city["name"],
-            "temperature": current.get("temperature"),
-            "weather_code": weather_code,
-            "weather_description": WEATHER_CODES.get(weather_code, "不明"),
+            "date": target_date,
+            "weather_code": wc,
+            "weather_description": WEATHER_CODES.get(wc, "不明"),
+            "temp_max": tmax[0] if tmax else None,
+            "temp_min": tmin[0] if tmin else None,
             "success": True,
             "error": None,
         }
+
     except httpx.HTTPStatusError as e:
         return {
             "location": city["name"],
-            "temperature": None,
+            "date": target_date,
             "weather_code": None,
             "weather_description": "",
+            "temp_max": None,
+            "temp_min": None,
             "success": False,
             "error": f"HTTP Error: {e.response.status_code}",
         }
     except Exception as e:
         return {
             "location": city["name"],
-            "temperature": None,
+            "date": target_date,
             "weather_code": None,
             "weather_description": "",
+            "temp_max": None,
+            "temp_min": None,
             "success": False,
             "error": str(e),
         }

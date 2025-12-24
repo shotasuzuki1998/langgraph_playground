@@ -5,13 +5,14 @@ LangGraphノード定義
 
 import asyncio
 import json
+from datetime import date as dt_date
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from src.agents.state import AgentState
 from src.external.db.session import execute_sql
-from src.external.weather.open_meteo_client import get_weather
+from src.external.weather.open_meteo_client import get_weather_on_date
 from src.schemas.database_schema import SCHEMA_INFO
 from src.services.query_checker import check_query
 from src.settings import settings
@@ -141,12 +142,20 @@ def execute_sql_node(state: AgentState) -> AgentState:
     result = execute_sql(state["checked_query"])
 
     if result["success"]:
+        data = result.get("data", []) or []
         formatted = f"結果: {result['row_count']}件\n{json.dumps(result['data'], ensure_ascii=False, default=str)}"
-        return {**state, "sql_result": formatted, "error": None, "error_type": None}
+        return {
+            **state,
+            "sql_result": formatted,
+            "sql_result_data": data,
+            "error": None,
+            "error_type": None,
+        }
     else:
         return {
             **state,
             "sql_result": "",
+            "sql_result_data": [],
             "error": result["error"],
             "error_type": "execute",
             "retry_count": state.get("retry_count", 0) + 1,
@@ -301,31 +310,33 @@ def check_weather_needed_node(state: AgentState) -> AgentState:
 
 def fetch_weather_node(state: AgentState) -> AgentState:
     """
-    天気情報を取得するノード
+    天気情報を取得するノード（SQL結果から抽出した date に合致する天気を取得）
 
-    Args:
-        state: 現在のエージェント状態
-
-    Returns:
-        AgentState: 更新された状態（weather_info, weather_api_historyが設定される）
+    前提:
+    - state["weather_locations"]: ["tokyo", "osaka"] のようなキー（CITY_COORDINATESのキー）
+    - state["weather_dates"]: ["2025-12-01", "2025-12-02"] のような YYYY-MM-DD の配列
+    - get_weather_on_date(location, target_date): 指定日天気を返す async 関数
     """
-    locations = state.get("weather_locations", [])
+    locations = state.get("weather_locations", []) or []
+    dates = state.get("weather_dates", []) or []
 
-    if not locations:
+    # locations または dates が無いなら何もしない
+    if not locations or not dates:
         return {
             **state,
             "weather_info": [],
             "weather_api_history": {
                 "called": False,
-                "locations": [],
+                "locations": locations,
+                "dates": dates,
                 "success": True,
                 "error": None,
             },
         }
 
-    # 非同期処理を同期的に実行
+    # 非同期処理を同期的に実行（locations × dates を全部取りに行く）
     async def fetch_all():
-        tasks = [get_weather(loc) for loc in locations]
+        tasks = [get_weather_on_date(loc, d) for loc in locations for d in dates]
         return await asyncio.gather(*tasks)
 
     try:
@@ -336,17 +347,22 @@ def fetch_weather_node(state: AgentState) -> AgentState:
         errors = []
 
         for result in results:
+            # result は get_weather_on_date の戻り値想定
+            # 例: {"location": "東京", "date": "2025-12-01", "weather_description": "...", ...}
             weather_info.append(
                 {
-                    "location": result["location"],
-                    "temperature": result["temperature"],
-                    "weather_code": result["weather_code"],
-                    "weather_description": result["weather_description"],
+                    "location": result.get("location"),
+                    "date": result.get("date"),
+                    "weather_code": result.get("weather_code"),
+                    "weather_description": result.get("weather_description"),
+                    "temp_max": result.get("temp_max"),
+                    "temp_min": result.get("temp_min"),
                 }
             )
-            if not result["success"]:
+
+            if not result.get("success"):
                 all_success = False
-                if result["error"]:
+                if result.get("error"):
                     errors.append(result["error"])
 
         return {
@@ -355,10 +371,12 @@ def fetch_weather_node(state: AgentState) -> AgentState:
             "weather_api_history": {
                 "called": True,
                 "locations": locations,
+                "dates": dates,
                 "success": all_success,
                 "error": "; ".join(errors) if errors else None,
             },
         }
+
     except Exception as e:
         return {
             **state,
@@ -366,6 +384,7 @@ def fetch_weather_node(state: AgentState) -> AgentState:
             "weather_api_history": {
                 "called": True,
                 "locations": locations,
+                "dates": dates,
                 "success": False,
                 "error": str(e),
             },
@@ -387,12 +406,15 @@ def generate_answer_with_weather_node(state: AgentState) -> AgentState:
     if state.get("weather_info"):
         weather_parts = []
         for info in state["weather_info"]:
-            if info["temperature"] is not None:
+            temp_max = info.get("temp_max")
+            temp_min = info.get("temp_min")
+            if temp_max is not None or temp_min is not None:
+                temp_str = f"最高 {temp_max}°C / 最低 {temp_min}°C"
                 weather_parts.append(
-                    f"{info['location']}: {info['weather_description']}、気温 {info['temperature']}°C"
+                    f"{info.get('location')} ({info.get('date')}): {info.get('weather_description')}、{temp_str}"
                 )
         if weather_parts:
-            weather_text = "\n\n【現在の天気】\n" + "\n".join(weather_parts)
+            weather_text = "\n\n【天気情報】\n" + "\n".join(weather_parts)
 
     prompt = f"""以下のSQL実行結果をもとに、ユーザーの質問に回答してください。
 
@@ -419,3 +441,33 @@ def generate_answer_with_weather_node(state: AgentState) -> AgentState:
     )
 
     return {**state, "answer": response.content}
+
+
+def extract_weather_dates_node(state: AgentState) -> AgentState:
+    """
+    SQL実行結果(sql_result_data)から date カラムを抽出して weather_dates に入れる
+    """
+    rows = state.get("sql_result_data", []) or []
+    dates: list[str] = []
+
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+
+        d = row.get("date")  # ←ここを基準にする
+        if d is None:
+            continue
+
+        # DBによって date型 or 文字列があり得るので吸収
+        if isinstance(d, dt_date):
+            dates.append(d.strftime("%Y-%m-%d"))
+        else:
+            ds = str(d)[:10]  # "YYYY-MM-DD..." を想定して先頭10
+            # 雑に弾く（必要なら厳密化）
+            if len(ds) == 10 and ds[4] == "-" and ds[7] == "-":
+                dates.append(ds)
+
+    # 重複排除しつつ順序維持
+    uniq = list(dict.fromkeys(dates))
+
+    return {**state, "weather_dates": uniq}

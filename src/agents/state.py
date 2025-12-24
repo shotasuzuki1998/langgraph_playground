@@ -5,40 +5,6 @@
 from typing import TypedDict
 
 
-class WeatherInfo(TypedDict):
-    """
-    天気情報
-
-    Attributes:
-        location: 場所（tokyo/osaka）
-        temperature: 気温
-        weather_code: 天気コード
-        weather_description: 天気の説明
-    """
-
-    location: str
-    temperature: float | None
-    weather_code: int | None
-    weather_description: str
-
-
-class WeatherApiHistory(TypedDict):
-    """
-    天気API呼び出し履歴
-
-    Attributes:
-        called: APIを呼び出したかどうか
-        locations: 呼び出した場所のリスト
-        success: 成功したかどうか
-        error: エラーメッセージ（あれば）
-    """
-
-    called: bool
-    locations: list[str]
-    success: bool
-    error: str | None
-
-
 class AgentState(TypedDict):
     """
     エージェントの状態
@@ -62,6 +28,7 @@ class AgentState(TypedDict):
     sql_query: str
     checked_query: str
     sql_result: str
+    sql_result_data: list[dict]
     answer: str
     error: str | None
     error_type: str | None
@@ -69,5 +36,6 @@ class AgentState(TypedDict):
     # 天気関連
     needs_weather: bool
     weather_locations: list[str]
-    weather_info: list[WeatherInfo]
-    weather_api_history: WeatherApiHistory
+    weather_dates: list[str]
+    weather_info: list[dict]
+    weather_api_history: dict
