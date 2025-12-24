@@ -50,7 +50,7 @@ async def get_weather_on_date(location: str, target_date: str) -> dict:
             "temp_max": None,
             "temp_min": None,
             "success": False,
-            "error": f"未対応の場所: {location}",
+            "error": f"場所の指定なし: {location}",
         }
 
     city = CITY_COORDINATES[location]
