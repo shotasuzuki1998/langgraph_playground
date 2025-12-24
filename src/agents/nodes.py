@@ -3,6 +3,7 @@ LangGraphノード定義
 各処理ステップを関数として定義
 """
 
+import asyncio
 import json
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -10,6 +11,7 @@ from langchain_openai import ChatOpenAI
 
 from src.agents.state import AgentState
 from src.external.db.session import execute_sql
+from src.external.weather.open_meteo_client import get_weather
 from src.schemas.database_schema import SCHEMA_INFO
 from src.services.query_checker import check_query
 from src.settings import settings
@@ -240,3 +242,191 @@ def check_execute_result(state: AgentState) -> str:
             return "retry"
         return "error"
     return "success"
+
+
+def check_weather_needed_node(state: AgentState) -> AgentState:
+    """
+    天気情報が必要かどうかを判定するノード
+
+    Args:
+        state: 現在のエージェント状態
+
+    Returns:
+        AgentState: 更新された状態（needs_weather, weather_locationsが設定される）
+    """
+    question = state["question"].lower()
+
+    # 天気関連のキーワード
+    weather_keywords = ["天気", "気温", "weather", "温度"]
+
+    # 場所のキーワード
+    location_patterns = {
+        "tokyo": ["東京", "tokyo", "とうきょう"],
+        "osaka": ["大阪", "osaka", "おおさか"],
+    }
+
+    # 天気キーワードが含まれているか確認
+    needs_weather = any(keyword in question for keyword in weather_keywords)
+
+    # 場所を特定
+    locations = []
+    if needs_weather:
+        for location_key, patterns in location_patterns.items():
+            if any(pattern in question for pattern in patterns):
+                locations.append(location_key)
+
+        # 場所が指定されていない場合は両方取得
+        if not locations:
+            locations = ["tokyo", "osaka"]
+
+    return {
+        **state,
+        "needs_weather": needs_weather,
+        "weather_locations": locations,
+        "weather_info": [],
+        "weather_api_history": {
+            "called": False,
+            "locations": [],
+            "success": False,
+            "error": None,
+        },
+    }
+
+
+# ここから天気関連のnode
+def fetch_weather_node(state: AgentState) -> AgentState:
+    """
+    天気情報を取得するノード
+
+    Args:
+        state: 現在のエージェント状態
+
+    Returns:
+        AgentState: 更新された状態（weather_info, weather_api_historyが設定される）
+    """
+    locations = state.get("weather_locations", [])
+
+    if not locations:
+        return {
+            **state,
+            "weather_info": [],
+            "weather_api_history": {
+                "called": False,
+                "locations": [],
+                "success": True,
+                "error": None,
+            },
+        }
+
+    # 非同期処理を同期的に実行
+    async def fetch_all():
+        tasks = [get_weather(loc) for loc in locations]
+        return await asyncio.gather(*tasks)
+
+    try:
+        results = asyncio.run(fetch_all())
+
+        weather_info = []
+        all_success = True
+        errors = []
+
+        for result in results:
+            weather_info.append(
+                {
+                    "location": result["location"],
+                    "temperature": result["temperature"],
+                    "weather_code": result["weather_code"],
+                    "weather_description": result["weather_description"],
+                }
+            )
+            if not result["success"]:
+                all_success = False
+                if result["error"]:
+                    errors.append(result["error"])
+
+        return {
+            **state,
+            "weather_info": weather_info,
+            "weather_api_history": {
+                "called": True,
+                "locations": locations,
+                "success": all_success,
+                "error": "; ".join(errors) if errors else None,
+            },
+        }
+    except Exception as e:
+        return {
+            **state,
+            "weather_info": [],
+            "weather_api_history": {
+                "called": True,
+                "locations": locations,
+                "success": False,
+                "error": str(e),
+            },
+        }
+
+
+def generate_answer_with_weather_node(state: AgentState) -> AgentState:
+    """
+    天気情報を含めて回答を生成するノード
+
+    Args:
+        state: 現在のエージェント状態
+
+    Returns:
+        AgentState: 更新された状態（answerが設定される）
+    """
+    # 天気情報のフォーマット
+    weather_text = ""
+    if state.get("weather_info"):
+        weather_parts = []
+        for info in state["weather_info"]:
+            if info["temperature"] is not None:
+                weather_parts.append(
+                    f"{info['location']}: {info['weather_description']}、気温 {info['temperature']}°C"
+                )
+        if weather_parts:
+            weather_text = "\n\n【現在の天気】\n" + "\n".join(weather_parts)
+
+    prompt = f"""以下のSQL実行結果をもとに、ユーザーの質問に回答してください。
+
+【質問】
+{state['question']}
+
+【実行したSQL】
+{state['checked_query']}
+
+【実行結果】
+{state['sql_result']}
+{weather_text}
+
+数値はカンマ区切りで見やすく、必要に応じて考察も加えてください。
+天気情報がある場合は、それも回答に含めてください。
+"""
+
+    llm = get_llm()
+    response = llm.invoke(
+        [
+            SystemMessage(content="あなたはGoogle広告のデータアナリストです。"),
+            HumanMessage(content=prompt),
+        ]
+    )
+
+    return {**state, "answer": response.content}
+
+
+# 条件分岐関数を追加
+def should_fetch_weather(state: AgentState) -> str:
+    """
+    天気取得が必要かどうかを判定
+
+    Args:
+        state: 現在のエージェント状態
+
+    Returns:
+        str: 次のノード名（"fetch_weather" or "generate_answer"）
+    """
+    if state.get("needs_weather") and state.get("weather_locations"):
+        return "fetch_weather"
+    return "generate_answer"
