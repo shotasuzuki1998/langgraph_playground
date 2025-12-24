@@ -40,6 +40,7 @@ def main():
             if show_detail:
                 result = ask_with_details(question)
                 print(f"\n【チェック済みSQL】\n{result['checked_query']}")
+                print(f"\n【APIの利用】\n{result['weather_api_history']}")
                 print(f"\n【実行結果】\n{result['sql_result']}")
                 print(f"\n【回答】\n{result['answer']}")
                 if result.get("error"):

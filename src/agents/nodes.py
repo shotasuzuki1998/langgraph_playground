@@ -229,21 +229,27 @@ def check_query_result(state: AgentState) -> str:
 
 def check_execute_result(state: AgentState) -> str:
     """
-    SQL実行結果を判定
-
-    Args:
-        state: 現在のエージェント状態
+    SQL実行結果を判定し、次のノードを決定
 
     Returns:
-        str: 次のノード名（"success", "retry", "error"）
+        str: 次のノード名
+            - "fetch_weather": 成功 & 天気が必要
+            - "generate_answer": 成功 & 天気不要
+            - "retry": エラー & リトライ可能
+            - "error": エラー & リトライ上限
     """
     if state.get("error"):
         if state.get("retry_count", 0) < settings.max_retries:
             return "retry"
         return "error"
-    return "success"
+
+    # 成功時: 天気が必要かどうかで分岐
+    if state.get("needs_weather") and state.get("weather_locations"):
+        return "fetch_weather"
+    return "generate_answer"
 
 
+# ここから天気関連のnode
 def check_weather_needed_node(state: AgentState) -> AgentState:
     """
     天気情報が必要かどうかを判定するノード
@@ -293,7 +299,6 @@ def check_weather_needed_node(state: AgentState) -> AgentState:
     }
 
 
-# ここから天気関連のnode
 def fetch_weather_node(state: AgentState) -> AgentState:
     """
     天気情報を取得するノード
@@ -414,19 +419,3 @@ def generate_answer_with_weather_node(state: AgentState) -> AgentState:
     )
 
     return {**state, "answer": response.content}
-
-
-# 条件分岐関数を追加
-def should_fetch_weather(state: AgentState) -> str:
-    """
-    天気取得が必要かどうかを判定
-
-    Args:
-        state: 現在のエージェント状態
-
-    Returns:
-        str: 次のノード名（"fetch_weather" or "generate_answer"）
-    """
-    if state.get("needs_weather") and state.get("weather_locations"):
-        return "fetch_weather"
-    return "generate_answer"

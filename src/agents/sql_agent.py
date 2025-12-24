@@ -16,7 +16,6 @@ from src.agents.nodes import (
     generate_answer_with_weather_node,
     generate_sql_node,
     handle_error_node,
-    should_fetch_weather,
 )
 from src.agents.state import AgentState
 
@@ -26,17 +25,14 @@ def build_graph():
     LangGraphのワークフローを構築
 
     ワークフロー:
-    1. check_weather_needed: 天気情報が必要か判定
+    1. check_weather_needed: 天気情報が必要か判定（needs_weather, locations）
     2. generate_sql: 自然言語からSQLを生成
     3. check_query: SQLの安全性をチェック
     4. execute_sql: SQLを実行
-    5. (条件分岐) fetch_weather: 必要なら天気情報を取得
-    6. generate_answer: 結果から回答を生成
+    5. (条件分岐) should_fetch_weather: 天気取得が必要ならfetch_weatherへ
+    6. generate_answer: 通常回答 or generate_answer_with_weather: 天気込み回答
 
     エラー時はリトライまたはエラーハンドリングに分岐
-
-    Returns:
-        CompiledGraph: コンパイル済みのLangGraphワークフロー
     """
     workflow = StateGraph(AgentState)
 
@@ -53,7 +49,7 @@ def build_graph():
     # エントリーポイント
     workflow.set_entry_point("check_weather_needed")
 
-    # エッジ
+    # 直線エッジ
     workflow.add_edge("check_weather_needed", "generate_sql")
     workflow.add_edge("generate_sql", "check_query")
 
@@ -68,18 +64,10 @@ def build_graph():
         },
     )
 
-    # 条件分岐: SQL実行後 → 天気取得が必要か判定
+    # 条件分岐: SQL実行後
     workflow.add_conditional_edges(
         "execute_sql",
-        lambda state: (
-            "error"
-            if state.get("error") and state.get("retry_count", 0) >= 3
-            else (
-                "retry"
-                if state.get("error")
-                else "fetch_weather" if state.get("needs_weather") else "generate_answer"
-            )
-        ),
+        check_execute_result,
         {
             "fetch_weather": "fetch_weather",
             "generate_answer": "generate_answer",
@@ -88,9 +76,10 @@ def build_graph():
         },
     )
 
-    # 天気取得後は天気付き回答生成へ
+    # 天気取得後は天気付き回答へ
     workflow.add_edge("fetch_weather", "generate_answer_with_weather")
 
+    # 終端
     workflow.add_edge("generate_answer", END)
     workflow.add_edge("generate_answer_with_weather", END)
     workflow.add_edge("handle_error", END)
@@ -98,7 +87,6 @@ def build_graph():
     return workflow.compile()
 
 
-# グラフをコンパイル
 agent = build_graph()
 
 
