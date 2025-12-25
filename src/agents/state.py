@@ -33,7 +33,7 @@ class AgentState(TypedDict):
     error: str | None
     error_type: str | None
     retry_count: int
-    # 天気関連
+    # 天気関連のstate
     needs_weather: bool
     weather_locations: list[str]
     weather_dates: list[str]

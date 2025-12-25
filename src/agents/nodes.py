@@ -33,15 +33,6 @@ def get_llm():
 
 
 def generate_sql_node(state: AgentState) -> AgentState:
-    """
-    SQLを生成するノード
-
-    Args:
-        state: 現在のエージェント状態
-
-    Returns:
-        AgentState: 更新された状態（sql_queryが設定される）
-    """
     # エラー時のリトライプロンプト
     retry_context = ""
     if state.get("error") and state.get("retry_count", 0) > 0:
@@ -53,9 +44,6 @@ def generate_sql_node(state: AgentState) -> AgentState:
 エラー: {state['error']}
 
 ポリシーに準拠したSQLを生成してください。
-- SELECT文のみ使用可能
-- サブクエリ、UNION、WITH句は使用不可
-- 許可されたテーブルのみアクセス可能
 """
         else:
             retry_context = f"""
@@ -64,6 +52,15 @@ def generate_sql_node(state: AgentState) -> AgentState:
 エラー: {state.get('error', '')}
 
 構文エラーを修正してください。
+"""
+
+    # 天気が必要な場合はdateを取得してもらうように指定する。
+    date_rule = ""
+    if state.get("needs_weather"):
+        date_rule = """- 【重要】天気情報と紐付けるため、必ず以下を守ってください：
+- SELECT句に `ds.date` を含める
+- GROUP BY句にも `ds.date` を含める
+- 例: SELECT ds.date, c.name, SUM(ds.clicks) ... GROUP BY ds.date, c.name
 """
 
     system_prompt = f"""あなたはGoogle広告データベースのSQLエキスパートです。
@@ -79,7 +76,7 @@ def generate_sql_node(state: AgentState) -> AgentState:
 - サブクエリ、UNION、WITH句（CTE）は使用禁止
 - LIMITは自動で追加されるので不要
 - SQLのみを出力（説明不要、マークダウン不要）
-"""
+{date_rule}"""
 
     user_prompt = f"{retry_context}質問: {state['question']}"
 
@@ -92,7 +89,6 @@ def generate_sql_node(state: AgentState) -> AgentState:
     )
 
     sql = response.content.strip()
-    # マークダウンのコードブロックを除去
     if sql.startswith("```"):
         lines = sql.split("\n")
         sql = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
@@ -253,7 +249,7 @@ def check_execute_result(state: AgentState) -> str:
         return "error"
 
     # 成功時: 天気が必要かどうかで分岐
-    if state.get("needs_weather") and state.get("weather_locations"):
+    if state.get("needs_weather"):
         return "fetch_weather"
     return "generate_answer"
 
