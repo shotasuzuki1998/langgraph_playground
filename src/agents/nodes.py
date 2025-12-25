@@ -320,20 +320,6 @@ def fetch_weather_node(state: AgentState) -> AgentState:
     locations = state.get("weather_locations", []) or []
     dates = state.get("weather_dates", []) or []
 
-    # locations または dates が無いなら何もしない
-    if not locations or not dates:
-        return {
-            **state,
-            "weather_info": [],
-            "weather_api_history": {
-                "called": False,
-                "locations": locations,
-                "dates": dates,
-                "success": True,
-                "error": None,
-            },
-        }
-
     # 非同期処理を同期的に実行（locations × dates を全部取りに行く）
     async def fetch_all():
         tasks = [get_weather_on_date(loc, d) for loc in locations for d in dates]
