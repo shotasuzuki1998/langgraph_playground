@@ -68,14 +68,28 @@ def generate_sql_node(state: AgentState) -> AgentState:
 
 {SCHEMA_INFO}
 
-## ルール
+## 絶対に守るべきルール
 - SELECTクエリのみ生成
 - MySQL構文を使用
 - 日付は 'YYYY-MM-DD' 形式
 - 集計時はGROUP BYを忘れずに
-- サブクエリ、UNION、WITH句（CTE）は使用禁止
-- LIMITは自動で追加されるので不要
+- LIMITは自動追加されるので不要
 - SQLのみを出力（説明不要、マークダウン不要）
+
+## 注意事項
+- 集計関数（SUM, AVG等）とサブクエリを比較する場合は、計算方法を一致させる
+- NG例: HAVING SUM(cost)/SUM(clicks) = (SELECT MAX(cost/clicks) FROM ...)
+  → 外側は「全期間平均」、内側は「日別MAX」で計算方法が違う
+- OK例: HAVING SUM(cost)/SUM(clicks) = (SELECT MAX(avg_cpc) FROM (SELECT SUM(cost)/SUM(clicks) AS avg_cpc FROM ... GROUP BY keyword_id) t)
+  → 両方とも「全期間平均」で統一
+
+## 「〇〇ごとのTOP N」への対応
+全件取得してORDER BYで並べてください。
+グループごとの抽出は回答生成時に行います。
+
+例: キャンペーンごとのCPC最大
+→ SELECT c.name, k.keyword_text, SUM(cost)/NULLIF(SUM(clicks),0) AS cpc 
+   FROM ... GROUP BY c.id, k.id ORDER BY cpc DESC
 {date_rule}"""
 
     user_prompt = f"{retry_context}質問: {state['question']}"

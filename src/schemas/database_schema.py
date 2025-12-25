@@ -50,6 +50,15 @@ SCHEMA_INFO = """
 - campaign_id, date
 - impressions, clicks, cost, conversions, conversion_value
 
+### 実績テーブルの使い分け
+- search_query_keyword_ad_daily_stats: 検索（リスティング）広告のみの実績
+- display_ad_daily_stats: ディスプレイ/動画広告のみの実績
+- campaign_daily_stats: 全広告タイプを含むキャンペーン全体の実績
+
+【重要】広告タイプを横断して比較する場合は、以下のいずれかを使用：
+1. campaign_daily_stats を使う（キャンペーン単位の集計）
+2. search_query_keyword_ad_daily_stats と display_ad_daily_stats を UNION ALL で結合
+
 ### 主要指標の計算式
 - CTR = clicks / impressions * 100
 - CPC = cost / clicks
