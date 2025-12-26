@@ -317,10 +317,8 @@ def check_weather_needed_node(state: AgentState) -> AgentState:
 
 def extract_weather_dates_node(state: AgentState) -> AgentState:
     """
-    SQL実行結果(sql_result_data)から date カラムを抽出して weather_dates に入れる
-    日付が取得できない場合は weather_unavailable を True に設定
+    SQL実行結果から日付を抽出（カラム名に依存せず、値のフォーマットで判断）
     """
-    # 天気が不要な場合はスキップ
     if not state.get("needs_weather"):
         return state
 
@@ -331,20 +329,30 @@ def extract_weather_dates_node(state: AgentState) -> AgentState:
         if not isinstance(row, dict):
             continue
 
-        d = row.get("date")  # ←ここを基準にする
-        if d is None:
-            continue
+        # 全カラムをチェックして日付形式の値を探す
+        for value in row.values():
+            if value is None:
+                continue
 
-        # DBによって date型 or 文字列があり得るので吸収
-        if isinstance(d, dt_date):
-            dates.append(d.strftime("%Y-%m-%d"))
-        else:
-            ds = str(d)[:10]  # "YYYY-MM-DD..." を想定して先頭10
-            # 雑に弾く（必要なら厳密化）
-            if len(ds) == 10 and ds[4] == "-" and ds[7] == "-":
-                dates.append(ds)
+            # date型の場合
+            if isinstance(value, dt_date):
+                dates.append(value.strftime("%Y-%m-%d"))
+                continue
 
-    # 重複排除しつつ順序維持
+            # 文字列の場合、YYYY-MM-DD形式かチェック
+            value_str = str(value)[:10]
+            if len(value_str) == 10 and value_str[4] == "-" and value_str[7] == "-":
+                # 数字部分が妥当かも簡易チェック
+                try:
+                    year = int(value_str[:4])
+                    month = int(value_str[5:7])
+                    day = int(value_str[8:10])
+                    if 1900 <= year <= 2100 and 1 <= month <= 12 and 1 <= day <= 31:
+                        dates.append(value_str)
+                except ValueError:
+                    pass
+
+    # 重複排除
     uniq = list(dict.fromkeys(dates))
 
     # 日付が抽出できなかった場合
@@ -359,7 +367,7 @@ def extract_weather_dates_node(state: AgentState) -> AgentState:
             ),
         }
 
-    # 日付が多すぎる場合は制限（429エラー防止）
+    # 日付が多すぎる場合は制限
     MAX_DATES = 10
     weather_note = None
     if len(uniq) > MAX_DATES:
