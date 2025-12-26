@@ -33,6 +33,9 @@ def get_llm():
 
 
 def generate_sql_node(state: AgentState) -> AgentState:
+    """
+    SQLを生成するノード
+    """
     # エラー時のリトライプロンプト
     retry_context = ""
     if state.get("error") and state.get("retry_count", 0) > 0:
@@ -53,15 +56,7 @@ def generate_sql_node(state: AgentState) -> AgentState:
 
 構文エラーを修正してください。
 """
-
-    # 天気が必要な場合はdateを取得してもらうように指定する。
-    date_rule = ""
-    if state.get("needs_weather"):
-        date_rule = """- 【重要】天気情報と紐付けるため、必ず以下を守ってください：
-- SELECT句に `ds.date` を含める
-- GROUP BY句にも `ds.date` を含める
-- 例: SELECT ds.date, c.name, SUM(ds.clicks) ... GROUP BY ds.date, c.name
-"""
+    # 天気情報の取得はSQL結果に日付があるかどうかで判断する
 
     system_prompt = f"""あなたはGoogle広告データベースのSQLエキスパートです。
 ユーザーの質問に対して、適切なSQLクエリを生成してください。
@@ -90,7 +85,7 @@ def generate_sql_node(state: AgentState) -> AgentState:
 例: キャンペーンごとのCPC最大
 → SELECT c.name, k.keyword_text, SUM(cost)/NULLIF(SUM(clicks),0) AS cpc 
    FROM ... GROUP BY c.id, k.id ORDER BY cpc DESC
-{date_rule}"""
+"""
 
     user_prompt = f"{retry_context}質問: {state['question']}"
 
@@ -309,6 +304,8 @@ def check_weather_needed_node(state: AgentState) -> AgentState:
         "needs_weather": needs_weather,
         "weather_locations": locations,
         "weather_info": [],
+        "weather_unavailable": False,  # 初期化
+        "weather_unavailable_reason": None,  # 初期化
         "weather_api_history": {
             "called": False,
             "locations": [],
@@ -318,17 +315,89 @@ def check_weather_needed_node(state: AgentState) -> AgentState:
     }
 
 
+def extract_weather_dates_node(state: AgentState) -> AgentState:
+    """
+    SQL実行結果(sql_result_data)から date カラムを抽出して weather_dates に入れる
+    日付が取得できない場合は weather_unavailable を True に設定
+    """
+    # 天気が不要な場合はスキップ
+    if not state.get("needs_weather"):
+        return state
+
+    rows = state.get("sql_result_data", []) or []
+    dates: list[str] = []
+
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+
+        d = row.get("date")  # ←ここを基準にする
+        if d is None:
+            continue
+
+        # DBによって date型 or 文字列があり得るので吸収
+        if isinstance(d, dt_date):
+            dates.append(d.strftime("%Y-%m-%d"))
+        else:
+            ds = str(d)[:10]  # "YYYY-MM-DD..." を想定して先頭10
+            # 雑に弾く（必要なら厳密化）
+            if len(ds) == 10 and ds[4] == "-" and ds[7] == "-":
+                dates.append(ds)
+
+    # 重複排除しつつ順序維持
+    uniq = list(dict.fromkeys(dates))
+
+    # 日付が抽出できなかった場合
+    if not uniq:
+        return {
+            **state,
+            "weather_dates": [],
+            "weather_unavailable": True,
+            "weather_unavailable_reason": (
+                "SQL結果に日付情報が含まれていないため、天気情報を取得できませんでした。\n"
+                "日付を特定できる質問（例：「〇〇が最も良かった日は？」「先週の日別データ」など）をお試しください。"
+            ),
+        }
+
+    # 日付が多すぎる場合は制限（429エラー防止）
+    MAX_DATES = 10
+    weather_note = None
+    if len(uniq) > MAX_DATES:
+        uniq = uniq[:MAX_DATES]
+        weather_note = f"※天気情報は最新{MAX_DATES}日分のみ表示しています"
+
+    return {
+        **state,
+        "weather_dates": uniq,
+        "weather_unavailable": False,
+        "weather_note": weather_note,
+    }
+
+
 def fetch_weather_node(state: AgentState) -> AgentState:
     """
     天気情報を取得するノード（SQL結果から抽出した date に合致する天気を取得）
+    日付が取得できなかった場合はスキップ
 
     前提:
     - state["weather_locations"]: ["tokyo", "osaka"] のようなキー（CITY_COORDINATESのキー）
     - state["weather_dates"]: ["2025-12-01", "2025-12-02"] のような YYYY-MM-DD の配列
     - get_weather_on_date(location, target_date): 指定日天気を返す async 関数
     """
+    # 天気が不要、または日付が取得できなかった場合はスキップ
+    if not state.get("needs_weather") or state.get("weather_unavailable"):
+        return state
+
     locations = state.get("weather_locations", []) or []
     dates = state.get("weather_dates", []) or []
+
+    # 日付がない場合はスキップ
+    if not dates:
+        return {
+            **state,
+            "weather_unavailable": True,
+            "weather_unavailable_reason": "天気取得に必要な日付情報がありません",
+        }
 
     # 非同期処理を同期的に実行（locations × dates を全部取りに行く）
     async def fetch_all():
@@ -390,6 +459,7 @@ def fetch_weather_node(state: AgentState) -> AgentState:
 def generate_answer_with_weather_node(state: AgentState) -> AgentState:
     """
     天気情報を含めて回答を生成するノード
+    天気が取得できなかった場合はその理由も表示
 
     Args:
         state: 現在のエージェント状態
@@ -397,9 +467,16 @@ def generate_answer_with_weather_node(state: AgentState) -> AgentState:
     Returns:
         AgentState: 更新された状態（answerが設定される）
     """
-    # 天気情報のフォーマット
+    # ★ 天気情報の状態を整理
     weather_text = ""
-    if state.get("weather_info"):
+
+    if state.get("weather_unavailable"):
+        # 天気が取得できなかった場合
+        reason = state.get("weather_unavailable_reason", "天気情報を取得できませんでした")
+        weather_text = f"\n\n【天気情報について】\n{reason}"
+
+    elif state.get("weather_info"):
+        # 天気が取得できた場合
         weather_parts = []
         for info in state["weather_info"]:
             temp_max = info.get("temp_max")
@@ -411,6 +488,10 @@ def generate_answer_with_weather_node(state: AgentState) -> AgentState:
                 )
         if weather_parts:
             weather_text = "\n\n【天気情報】\n" + "\n".join(weather_parts)
+
+            # ★ 日付制限の注記があれば追加
+            if state.get("weather_note"):
+                weather_text += f"\n{state['weather_note']}"
 
     prompt = f"""以下のSQL実行結果をもとに、ユーザーの質問に回答してください。
 
@@ -426,6 +507,7 @@ def generate_answer_with_weather_node(state: AgentState) -> AgentState:
 
 数値はカンマ区切りで見やすく、必要に応じて考察も加えてください。
 天気情報がある場合は、それも回答に含めてください。
+天気情報が取得できなかった場合は、その旨を回答の最後に簡潔に記載してください。
 """
 
     llm = get_llm()
@@ -437,33 +519,3 @@ def generate_answer_with_weather_node(state: AgentState) -> AgentState:
     )
 
     return {**state, "answer": response.content}
-
-
-def extract_weather_dates_node(state: AgentState) -> AgentState:
-    """
-    SQL実行結果(sql_result_data)から date カラムを抽出して weather_dates に入れる
-    """
-    rows = state.get("sql_result_data", []) or []
-    dates: list[str] = []
-
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-
-        d = row.get("date")  # ←ここを基準にする
-        if d is None:
-            continue
-
-        # DBによって date型 or 文字列があり得るので吸収
-        if isinstance(d, dt_date):
-            dates.append(d.strftime("%Y-%m-%d"))
-        else:
-            ds = str(d)[:10]  # "YYYY-MM-DD..." を想定して先頭10
-            # 雑に弾く（必要なら厳密化）
-            if len(ds) == 10 and ds[4] == "-" and ds[7] == "-":
-                dates.append(ds)
-
-    # 重複排除しつつ順序維持
-    uniq = list(dict.fromkeys(dates))
-
-    return {**state, "weather_dates": uniq}
