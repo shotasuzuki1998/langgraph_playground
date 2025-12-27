@@ -386,11 +386,6 @@ def fetch_weather_node(state: AgentState) -> AgentState:
     """
     天気情報を取得するノード（SQL結果から抽出した date に合致する天気を取得）
     日付が取得できなかった場合はスキップ
-
-    前提:
-    - state["weather_locations"]: ["tokyo", "osaka"] のようなキー（CITY_COORDINATESのキー）
-    - state["weather_dates"]: ["2025-12-01", "2025-12-02"] のような YYYY-MM-DD の配列
-    - get_weather_on_date(location, target_date): 指定日天気を返す async 関数
     """
     # 天気が不要、または日付が取得できなかった場合はスキップ
     if not state.get("needs_weather") or state.get("weather_unavailable"):
@@ -497,7 +492,7 @@ def generate_answer_with_weather_node(state: AgentState) -> AgentState:
         if weather_parts:
             weather_text = "\n\n【天気情報】\n" + "\n".join(weather_parts)
 
-            # ★ 日付制限の注記があれば追加
+            # 日付制限の注記があれば追加
             if state.get("weather_note"):
                 weather_text += f"\n{state['weather_note']}"
 
