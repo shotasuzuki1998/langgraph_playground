@@ -92,6 +92,8 @@ class SQLResultGraphBuilder:
 
         if len(data) >= 2:
             self._add_aggregation_nodes(data, metric_cols)
+            self._add_share_analysis(data, dimension_col, metric_cols)
+            self._add_category_analysis(data, dimension_col, metric_cols)
 
         if len(data) >= 2 and dimension_col and metric_cols:
             self._add_ranking_nodes(data, dimension_col, metric_cols[0])
@@ -245,13 +247,187 @@ class SQLResultGraphBuilder:
                 continue
 
             label = self._get_label(col)
+            total = sum(values)
+            avg = total / len(values)
+            max_val = max(values)
+            min_val = min(values)
 
-            self.graph.add_node(EvidenceNode.from_aggregation(label, sum(values), "合計"))
-            self.graph.add_node(
-                EvidenceNode.from_aggregation(label, sum(values) / len(values), "平均")
+            # 基本集計
+            self.graph.add_node(EvidenceNode.from_aggregation(label, total, "合計"))
+            self.graph.add_node(EvidenceNode.from_aggregation(label, avg, "平均"))
+            self.graph.add_node(EvidenceNode.from_aggregation(label, max_val, "最大"))
+            self.graph.add_node(EvidenceNode.from_aggregation(label, min_val, "最小"))
+
+            # 追加分析: 最大/最小の比率
+            if min_val > 0:
+                ratio = max_val / min_val
+                self.graph.add_node(
+                    EvidenceNode(
+                        id=f"analysis_ratio_{col}",
+                        type=EvidenceType.COMPARISON,
+                        content=f"{label}の最大は最小の{ratio:.1f}倍",
+                        value={"ratio": ratio, "metric": col},
+                        metadata={"analysis_type": "ratio"},
+                    )
+                )
+
+            # 追加分析: 標準偏差（ばらつき）
+            if len(values) >= 2:
+                variance = sum((v - avg) ** 2 for v in values) / len(values)
+                std_dev = variance**0.5
+                cv = (std_dev / avg * 100) if avg > 0 else 0  # 変動係数
+
+                if cv > 50:
+                    dispersion = "非常に大きい"
+                elif cv > 30:
+                    dispersion = "大きい"
+                elif cv > 15:
+                    dispersion = "中程度"
+                else:
+                    dispersion = "小さい"
+
+                self.graph.add_node(
+                    EvidenceNode(
+                        id=f"analysis_dispersion_{col}",
+                        type=EvidenceType.COMPARISON,
+                        content=f"{label}のばらつきは{dispersion}（変動係数{cv:.1f}%）",
+                        value={"cv": cv, "std_dev": std_dev, "dispersion": dispersion},
+                        metadata={"analysis_type": "dispersion"},
+                    )
+                )
+
+    def _add_share_analysis(
+        self, data: list[dict], dimension_col: str | None, metric_cols: list[str]
+    ):
+        """シェア分析を追加"""
+        if not dimension_col or not metric_cols:
+            return
+
+        primary_metric = metric_cols[0]
+        values_with_names = []
+
+        for row in data:
+            if primary_metric in row and row[primary_metric] is not None:
+                try:
+                    val = float(row[primary_metric])
+                    name = row.get(dimension_col, "不明")
+                    values_with_names.append((name, val))
+                except (ValueError, TypeError):
+                    pass
+
+        if not values_with_names:
+            return
+
+        total = sum(v for _, v in values_with_names)
+        if total <= 0:
+            return
+
+        label = self._get_label(primary_metric)
+
+        # 上位の集中度（上位1件のシェア）
+        sorted_values = sorted(values_with_names, key=lambda x: x[1], reverse=True)
+        top_name, top_value = sorted_values[0]
+        top_share = (top_value / total) * 100
+
+        self.graph.add_node(
+            EvidenceNode(
+                id=f"analysis_top_share_{primary_metric}",
+                type=EvidenceType.COMPARISON,
+                content=f"トップの「{top_name}」が全体の{top_share:.1f}%を占める",
+                value={"top_name": top_name, "share": top_share},
+                metadata={"analysis_type": "share"},
             )
-            self.graph.add_node(EvidenceNode.from_aggregation(label, max(values), "最大"))
-            self.graph.add_node(EvidenceNode.from_aggregation(label, min(values), "最小"))
+        )
+
+        # 上位3件の集中度
+        if len(sorted_values) >= 3:
+            top3_total = sum(v for _, v in sorted_values[:3])
+            top3_share = (top3_total / total) * 100
+            self.graph.add_node(
+                EvidenceNode(
+                    id=f"analysis_top3_share_{primary_metric}",
+                    type=EvidenceType.COMPARISON,
+                    content=f"上位3件で全体の{top3_share:.1f}%を占める",
+                    value={"top3_share": top3_share},
+                    metadata={"analysis_type": "concentration"},
+                )
+            )
+
+    def _add_category_analysis(
+        self, data: list[dict], dimension_col: str | None, metric_cols: list[str]
+    ):
+        """カテゴリ別分析を追加（名前からカテゴリを推測）"""
+        if not dimension_col or not metric_cols:
+            return
+
+        primary_metric = metric_cols[0]
+
+        # 名前からカテゴリを抽出（_で区切られた最初の部分）
+        category_values = {}
+        for row in data:
+            if primary_metric in row and row[primary_metric] is not None:
+                try:
+                    val = float(row[primary_metric])
+                    name = str(row.get(dimension_col, ""))
+                    # カテゴリ抽出（"ECサイトA_ブランド検索" → "ECサイトA"）
+                    category = name.split("_")[0] if "_" in name else name
+                    if category:
+                        if category not in category_values:
+                            category_values[category] = []
+                        category_values[category].append(val)
+                except (ValueError, TypeError):
+                    pass
+
+        if len(category_values) < 2:
+            return
+
+        label = self._get_label(primary_metric)
+
+        # カテゴリ別の平均を計算
+        category_avgs = []
+        for cat, vals in category_values.items():
+            avg = sum(vals) / len(vals)
+            category_avgs.append((cat, avg, len(vals)))
+
+        # 平均でソート
+        category_avgs.sort(key=lambda x: x[1])
+
+        # 最も効率の良い/悪いカテゴリ
+        best_cat, best_avg, best_count = category_avgs[0]
+        worst_cat, worst_avg, worst_count = category_avgs[-1]
+
+        # CPAの場合は低い方が良い
+        metric_lower = primary_metric.lower()
+        if any(x in metric_lower for x in ["cpa", "cpc", "cost"]):
+            self.graph.add_node(
+                EvidenceNode(
+                    id=f"analysis_best_category_{primary_metric}",
+                    type=EvidenceType.COMPARISON,
+                    content=f"カテゴリ別では「{best_cat}」系が最も効率的（平均{label}={EvidenceNode._format_number(best_avg)}）",
+                    value={"category": best_cat, "avg": best_avg, "count": best_count},
+                    metadata={"analysis_type": "category_best"},
+                )
+            )
+            self.graph.add_node(
+                EvidenceNode(
+                    id=f"analysis_worst_category_{primary_metric}",
+                    type=EvidenceType.COMPARISON,
+                    content=f"「{worst_cat}」系は改善余地あり（平均{label}={EvidenceNode._format_number(worst_avg)}、{best_cat}系の{worst_avg/best_avg:.1f}倍）",
+                    value={"category": worst_cat, "avg": worst_avg, "ratio": worst_avg / best_avg},
+                    metadata={"analysis_type": "category_worst"},
+                )
+            )
+        else:
+            # CV数などは高い方が良い
+            self.graph.add_node(
+                EvidenceNode(
+                    id=f"analysis_best_category_{primary_metric}",
+                    type=EvidenceType.COMPARISON,
+                    content=f"カテゴリ別では「{worst_cat}」系が最も高い（平均{label}={EvidenceNode._format_number(worst_avg)}）",
+                    value={"category": worst_cat, "avg": worst_avg, "count": worst_count},
+                    metadata={"analysis_type": "category_best"},
+                )
+            )
 
     def _add_ranking_nodes(self, data: list[dict], dimension_col: str, primary_metric: str):
         """ランキングノードを追加"""

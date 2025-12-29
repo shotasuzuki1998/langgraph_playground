@@ -1,7 +1,8 @@
 """
-Google広告 SQLエージェント（Evidence Graphを利用）
+Google広告 SQLエージェント
 
-フロー: 質問 → SQL生成 → チェック → 実行 → Evidence Graph構築 → 推論 → 回答
+フロー:
+  質問 → SQL生成 → チェック → 実行 → Evidence Graph構築 → 推論 → 回答
 """
 
 from langgraph.graph import END, StateGraph

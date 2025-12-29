@@ -145,11 +145,17 @@ class EvidenceGraph:
             EvidenceType.AGGREGATION: "📊 集計値",
             EvidenceType.RANKING: "🏆 ランキング",
             EvidenceType.SQL_RESULT: "📋 データ",
-            EvidenceType.COMPARISON: "⚖️ 比較",
+            EvidenceType.COMPARISON: "📈 分析",
             EvidenceType.CONTEXT: "📌 コンテキスト",
         }
 
-        for etype in [EvidenceType.AGGREGATION, EvidenceType.RANKING, EvidenceType.SQL_RESULT]:
+        # 表示順序: 集計値 → 分析 → ランキング → データ
+        for etype in [
+            EvidenceType.AGGREGATION,
+            EvidenceType.COMPARISON,
+            EvidenceType.RANKING,
+            EvidenceType.SQL_RESULT,
+        ]:
             nodes = self.get_nodes_by_type(etype)
             if nodes:
                 lines.append(f"### {type_labels.get(etype, etype.value)}")
