@@ -79,31 +79,6 @@ def build_graph():
 agent = build_graph()
 
 
-def ask(question: str) -> str:
-    """
-    自然言語で質問してSQLを実行し、回答を得る
-
-    Args:
-        question: 自然言語での質問
-
-    Returns:
-        str: 回答
-    """
-    initial_state: AgentState = {
-        "question": question,
-        "sql_query": "",
-        "checked_query": "",
-        "sql_result": "",
-        "answer": "",
-        "error": None,
-        "error_type": None,
-        "retry_count": 0,
-    }
-
-    result = agent.invoke(initial_state)
-    return result["answer"]
-
-
 def ask_with_details(question: str) -> dict:
     """
     詳細情報付きで質問を実行
