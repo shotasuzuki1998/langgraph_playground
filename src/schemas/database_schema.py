@@ -21,7 +21,7 @@ search_queries
 - display_ad_daily_stats: ad_id → ads.id
 - campaign_daily_stats: campaign_id → campaigns.id
 
-### 実績テーブルの選択ルール ← ★ここから追加
+### 実績テーブルの選択ルール
 
 集計したい単位に応じて適切な実績テーブルを選ぶこと：
 
@@ -40,7 +40,7 @@ search_queries
 - 検索広告のみ → search_query_keyword_ad_daily_stats
 - ディスプレイ広告のみ → display_ad_daily_stats
 
-### JOINの原則 ← ★ここも追加
+### JOINの原則
 
 1. **階層をたどる**: 直接JOINせず、テーブル階層に従って中間テーブルを経由する
 2. **上位階層はcampaign_daily_statsを使う**: services, ad_accounts, campaigns レベルの集計はcampaign_daily_statsが効率的
