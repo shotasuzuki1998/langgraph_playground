@@ -14,7 +14,7 @@ class AgentState(TypedDict):
         sql_query: 生成されたSQL
         checked_query: チェック済みSQL
         sql_result: 実行結果
-        evidence_graph: Evidence Graph
+        evidence: 構造化されたエビデンス
         answer: 最終回答
         error: エラーメッセージ
         error_type: エラー種別
@@ -25,7 +25,7 @@ class AgentState(TypedDict):
     sql_query: str
     checked_query: str
     sql_result: str
-    evidence_graph: Any  # EvidenceGraph
+    evidence: Any  # Evidence
     answer: str
     error: str | None
     error_type: str | None

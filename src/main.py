@@ -34,8 +34,8 @@ def main():
 
             print(f"\n【チェック済みSQL】\n{result['checked_query']}")
 
-            if show_debug and result.get("evidence_graph_prompt"):
-                print(f"\n【Evidence Graph】\n{result['evidence_graph_prompt']}")
+            if show_debug and result.get("evidence_prompt"):
+                print(f"\n【Evidence】\n{result['evidence_prompt']}")
 
             print(f"\n【回答】\n{result['answer']}")
 

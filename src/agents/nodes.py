@@ -7,8 +7,7 @@ import json
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
-from src.agents.evidence import EvidenceGraph
-from src.agents.graph_builder import build_evidence_graph
+from src.agents.evidence import Evidence, build_evidence
 from src.agents.state import AgentState
 from src.external.db.session import execute_sql
 from src.schemas.database_schema import SCHEMA_INFO
@@ -111,22 +110,24 @@ def execute_sql_node(state: AgentState) -> AgentState:
         }
 
 
-def build_evidence_graph_node(state: AgentState) -> AgentState:
-    """SQL結果からEvidence Graphを構築"""
-    graph = build_evidence_graph(
-        sql_result=state["sql_result"], sql_query=state["checked_query"], question=state["question"]
+def build_evidence_node(state: AgentState) -> AgentState:
+    """SQL結果からEvidenceを構築"""
+    evidence = build_evidence(
+        sql_result=state["sql_result"],
+        sql_query=state["checked_query"],
+        question=state["question"],
     )
-    return {**state, "evidence_graph": graph}
+    return {**state, "evidence": evidence}
 
 
-def reason_with_graph_node(state: AgentState) -> AgentState:
-    """Evidence Graphを使って推論・回答生成"""
-    graph: EvidenceGraph = state["evidence_graph"]
+def reason_with_evidence_node(state: AgentState) -> AgentState:
+    """Evidenceを使って推論・回答生成"""
+    evidence: Evidence = state["evidence"]
 
-    evidence_prompt = graph.to_reasoner_prompt()
+    evidence_prompt = evidence.to_prompt()
 
     system_prompt = """あなたはGoogle広告のシニアデータアナリストです。
-Evidence Graphに基づいて、ビジネスに役立つ分析レポートを作成してください。
+Evidenceに基づいて、ビジネスに役立つ分析レポートを作成してください。
 
 ## 回答構成（必ずこの順序で）
 
@@ -171,7 +172,7 @@ Evidence Graphに基づいて、ビジネスに役立つ分析レポートを作
 
 ---
 
-上記のEvidence Graphに基づいて、詳細な分析レポートを作成してください。
+上記のEvidenceに基づいて、詳細な分析レポートを作成してください。
 
 特に以下の点を意識してください：
 1. データから読み取れるパターンや傾向
