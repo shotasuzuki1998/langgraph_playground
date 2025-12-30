@@ -200,7 +200,6 @@ class SQLResultGraphBuilder:
     def _add_data_nodes(self, data: list[dict], dimension_col: str | None, metric_cols: list[str]):
         """データ行をノードとして追加"""
         for i, row in enumerate(data):
-            parts = []
 
             # ディメンション値を最初に
             dim_value = None
