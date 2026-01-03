@@ -25,11 +25,6 @@ def main():
                 print("終了します。")
                 break
 
-            if question.lower() == "debug":
-                show_debug = not show_debug
-                print(f"→ デバッグ表示: {'ON' if show_debug else 'OFF'}")
-                continue
-
             result = ask_with_details(question)
 
             print(f"\n【チェック済みSQL】\n{result['checked_query']}")

@@ -104,7 +104,7 @@ class Evidence:
         # 生データ（先頭5件）
         if self.raw_data:
             lines.append("### 📋 データ（先頭5件）")
-            for i, row in enumerate(self.raw_data[:5]):
+            for row in self.raw_data[:5]:
                 formatted_row = ", ".join(f"{k}={_format_value(v)}" for k, v in row.items())
                 lines.append(f"- {formatted_row}")
             lines.append("")
@@ -128,7 +128,7 @@ class Evidence:
 # ================== ヘルパー関数 ==================
 
 
-def _format_number(value: float) -> str:
+def _format_number(value: float | None) -> str:
     """数値を読みやすくフォーマット"""
     if value is None:
         return "N/A"
