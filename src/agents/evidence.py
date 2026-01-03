@@ -276,21 +276,23 @@ def _is_date_like(x: Any) -> bool:
 
 def _get_label(col: str) -> str:
     """
-    カラム名から日本語ラベルを取得
-
-    【用途】
-    "total_cost" → "費用" のように、ユーザーに分かりやすいラベルに変換
+    カラム名から日本語ラベルを取得（パターンマッチング版）
 
     【処理】
-    1. 定義済みラベルがあればそれを返す
-    2. なければカラム名をタイトルケースに変換
+    1. 完全一致チェック（"cost" → "費用"）
+    2. プレフィックス検出（"total_" → "総"）
+    3. パターンマッチング（"cost"を含む → "費用"）
+    4. フォールバック（タイトルケース）
 
-    【注意】
-    旧バージョンより簡略化されている。必要に応じてパターンマッチング版を使用。
+    【変換例】
+    - "cost" → "費用"
+    - "total_cost" → "総費用"
+    - "avg_cpc" → "平均CPC"
+    - "sum_conversions" → "合計CV数"
     """
     col_lower = col.lower()
 
-    # 定義済みラベル
+    # === 1. 完全一致チェック ===
     labels = {
         "impressions": "表示回数",
         "clicks": "クリック数",
@@ -305,8 +307,51 @@ def _get_label(col: str) -> str:
         "date": "日付",
     }
 
-    # 定義済みならそれを返す、なければタイトルケースに変換
-    return labels.get(col_lower, col.replace("_", " ").title())
+    if col_lower in labels:
+        return labels[col_lower]
+
+    # === 2. プレフィックスとパターンの定義 ===
+    patterns = {
+        "impression": "表示回数",
+        "click": "クリック数",
+        "cost": "費用",
+        "conversion": "CV数",
+        "spend": "費用",
+        "cpa": "CPA",
+        "cpc": "CPC",
+        "ctr": "CTR",
+        "cvr": "CVR",
+        "roas": "ROAS",
+    }
+
+    prefixes = {
+        "total": "総",
+        "sum": "合計",
+        "avg": "平均",
+        "average": "平均",
+        "max": "最大",
+        "min": "最小",
+    }
+
+    # === 3. プレフィックス検出 ===
+    prefix_label = ""
+    remaining = col_lower
+    for prefix, jp_prefix in prefixes.items():
+        if remaining.startswith(prefix + "_"):
+            prefix_label = jp_prefix
+            remaining = remaining[len(prefix) + 1 :]
+            break
+
+    # === 4. パターンマッチング ===
+    # 長いパターンから先にチェック（"conversion"が"conv"より優先）
+    for pattern, label in sorted(patterns.items(), key=lambda x: -len(x[0])):
+        if pattern in remaining:
+            return f"{prefix_label}{label}" if prefix_label else label
+
+    # === 5. フォールバック ===
+    if prefix_label:
+        return f"{prefix_label}{remaining.replace('_', ' ').title()}"
+    return col.replace("_", " ").title()
 
 
 # ============================================================================
