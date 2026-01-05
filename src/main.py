@@ -12,7 +12,7 @@ def main():
     print("終了するには 'exit' または 'quit' を入力")
     print("=" * 60)
 
-    show_debug = False
+    show_debug = True
 
     while True:
         try:
